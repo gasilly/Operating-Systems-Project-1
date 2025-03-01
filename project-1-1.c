@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <pthread.h>
 
@@ -8,44 +9,67 @@ typedef struct{
 	char value;
 } item;
 
-void *producer(int *in, int *out, item *buffer, FILE *fp);
-void *consumer(int *in, int *out, item *buffer);
-void readFile(item *next_produced, FILE *fp);
+struct thread_args{
+	FILE *fp;
+	int *in;
+	int *out;
+	item *buffer;
+	pthread_mutex_t *lock;
+};
+
+//Make a structure to pass to pthreads last argument with all the producer function arguments
+void* producer(void* _args);
+void* consumer(int *in, int *out, item *buffer);
 
 int main(){
-	item buffer[BUFFER_SIZE];
-	pthread_t tid;
-	FILE *fp = fopen("usenix2019_v3.1.txt", "r");
 	int in = 0;
 	int out = 0;
+
+	item buffer[BUFFER_SIZE];
+	pthread_t tid;
+	pthread_mutex_t lock;
+	pthread_mutex_init(&lock, NULL);
+
+	FILE *fp = fopen("usenix2019_v3.1.txt", "r");
+
+	//structure setup for multiple arguments in thread call
+	struct thread_args *args = malloc(sizeof(struct thread_args));
+	args->fp = fp;
+	args->in = &in;
+	args->out = &out;
+	args->buffer = buffer;
+	args->lock = &lock;
 	//make producers
 	for(int i = 0; i < 5; i++){
-		//pthread_create(&tid, NULL, producer, NULL);
+		pthread_create(&tid, NULL, producer, (void *) &args);
 	}
-	//producer(&in, &out, buffer, fp);
+
 	pthread_join(tid, NULL);	
+	pthread_mutex_destroy(&lock);
+	free(args);
 	fclose(fp);
 	return 0;
 }
 
-//possibly remove and simply put in the while loop in the producer function
-void readFile(item *next_produced, FILE *fp){
-	next_produced -> value = fgetc(fp);
-}
-
 //function for producers to place items in the buffer
-void *producer(int *in, int *out, item *buffer, FILE *fp){
+void* producer(void* _args){
 	item next_produced;
+	struct thread_args *args;
+	args = (struct thread_args *) _args;
 	while (true) {
-		if(feof(fp)){
+		if(feof(args->fp)){
 			break;		
 		}
-		readFile(&next_produced, fp);
-		//printf("%c\n", next_produced.value);
+
+		//lock the file reading so only one thread can access it
+		pthread_mutex_lock(args->lock);
+		next_produced.value = fgetc(args->fp);
+		pthread_mutex_unlock(args->lock);
+
 		// produce an item in next_produced //
-		//while(((*in + 1) % BUFFER_SIZE) == *out);
-		buffer[*in] = next_produced;
-		*in = (*in + 1) % BUFFER_SIZE;
+		while((*(args->in + 1) % BUFFER_SIZE) == *(args->out));
+		args->buffer[*(args->in)] = next_produced;
+		*(args->in) = (*(args->in + 1)) % BUFFER_SIZE;
 	}
 }
 //function for consumers to take items from the buffer and print it to the screen
