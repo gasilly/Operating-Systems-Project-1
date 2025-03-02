@@ -19,18 +19,16 @@ struct thread_args{
 
 //Make a structure to pass to pthreads last argument with all the producer function arguments
 void* producer(void* _args);
-void* consumer(int *in, int *out, item *buffer);
+void* consumer(void* _args);
 
 int main(){
 	int in = 0;
 	int out = 0;
-
+	FILE *fp = fopen("usenix2019_v3.1.txt", "r");
 	item buffer[BUFFER_SIZE];
-	pthread_t tid;
+	pthread_t tid[10];
 	pthread_mutex_t lock;
 	pthread_mutex_init(&lock, NULL);
-
-	FILE *fp = fopen("usenix2019_v3.1.txt", "r");
 
 	//structure setup for multiple arguments in thread call
 	struct thread_args *args = malloc(sizeof(struct thread_args));
@@ -39,12 +37,20 @@ int main(){
 	args->out = &out;
 	args->buffer = buffer;
 	args->lock = &lock;
+
 	//make producers
 	for(int i = 0; i < 5; i++){
-		pthread_create(&tid, NULL, producer, (void *) &args);
+		pthread_create(&tid[i], NULL, producer, (void *) args);
+	}
+	//make consumers
+	for(int i = 5; i < 10; i++){
+		pthread_create(&tid[i],NULL,consumer, (void*) args);
 	}
 
-	pthread_join(tid, NULL);	
+	//close threads/files and free memory  
+	for(int i = 0; i < 10; i++){
+		pthread_join(tid[i], NULL);
+	}	
 	pthread_mutex_destroy(&lock);
 	free(args);
 	fclose(fp);
@@ -56,24 +62,24 @@ void* producer(void* _args){
 	item next_produced;
 	struct thread_args *args;
 	args = (struct thread_args *) _args;
+
 	while (true) {
 		if(feof(args->fp)){
 			break;		
 		}
-
+		//wait while the buffer is full
+		while(((*(args->in) + 1) % BUFFER_SIZE) == *(args->out));
 		//lock the file reading so only one thread can access it
 		pthread_mutex_lock(args->lock);
 		next_produced.value = fgetc(args->fp);
-		pthread_mutex_unlock(args->lock);
-
-		// produce an item in next_produced //
-		while((*(args->in + 1) % BUFFER_SIZE) == *(args->out));
 		args->buffer[*(args->in)] = next_produced;
-		*(args->in) = (*(args->in + 1)) % BUFFER_SIZE;
+		*(args->in) = (*(args->in) + 1) % BUFFER_SIZE;
+		pthread_mutex_unlock(args->lock);
 	}
 }
+
 //function for consumers to take items from the buffer and print it to the screen
-void *consumer(int *in, int *out, item *buffer){
+void *consumer(void* _args){
 	item next_consumed;
 	/*
 	while(true){
