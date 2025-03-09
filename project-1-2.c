@@ -13,6 +13,7 @@ struct thread_args{
 	FILE *fp;
 	int *in;
 	int *out;
+	int *count;
 	int *trips;
 	bool doneProducing;
 	item *buffer;
@@ -28,7 +29,8 @@ int main(){
 	int in = 0;
 	int out = 0;
 	int trips = 0;
-	FILE *fp = fopen("1mb-examplefile-com.txt", "r");
+	int count = 0;
+	FILE *fp = fopen("usenix2019_v3.1.txt", "r");
 	if(fp == NULL){
 		printf("The file is invalid\n");
 		exit(1);
@@ -44,6 +46,7 @@ int main(){
 	args->fp = fp;
 	args->in = &in;
 	args->out = &out;
+	args->count = &count;
 	args->trips = &trips;
 	args->doneProducing = false;
 	args->buffer = buffer;
@@ -86,11 +89,12 @@ void* producer(void* _args){
 		pthread_mutex_lock(args->lock1);
 		next_produced.value = fgetc(args->fp);
 		if((*(args->in) + 1) % BUFFER_SIZE != *(args->out)){
-			*(args->trips) = *(args->trips) + 1;
+			*(args->trips) ++;
 		}
-		while((((*(args->in) + 1) % BUFFER_SIZE) == *(args->out)) && ((args->doneProducing) == false));
+		while((*(args->count) == BUFFER_SIZE) && ((args->doneProducing) == false));
 		args->buffer[*(args->in)] = next_produced;
-		*(args->in) = (*(args->in) + 1) % BUFFER_SIZE;	
+		*(args->in) = (*(args->in) + 1) % BUFFER_SIZE;
+		*(args->count) ++;	
 		pthread_mutex_unlock(args->lock1);
 	}
 	return NULL;
@@ -108,11 +112,11 @@ void *consumer(void* _args){
 		}
 		//lock so only one thread can take from the buffer and print to the screen at a time
 		pthread_mutex_lock(args->lock2);	
-		while((*(args->in) == *(args->out)) && ((args->doneProducing) == false));
+		while((*(args->count) == 0) && ((args->doneProducing) == false));
 		next_consumed = (args->buffer[*(args->out)]);
 		printf("%c", next_consumed.value);
-		//printf("%c", next_consumed.value);
 		*(args->out) = (*(args->out) + 1) % BUFFER_SIZE;
+		*(args->count) --;
 		 //consume the next item in next_consumed by printing it to the screen and deleting it from the buffer
 		pthread_mutex_unlock(args->lock2);
 	}
